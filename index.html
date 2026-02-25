@@ -12,20 +12,21 @@
     />
     <style>
       :root {
-        color-scheme: light;
-        --md-sys-color-primary: #2b6cb0;
-        --md-sys-color-on-primary: #ffffff;
-        --md-sys-color-primary-container: #d6e4ff;
-        --md-sys-color-on-primary-container: #001a41;
-        --md-sys-color-secondary-container: #d7e3f7;
-        --md-sys-color-on-secondary-container: #111c2b;
-        --md-sys-color-surface: #f8f9ff;
-        --md-sys-color-surface-container: #eef1f7;
-        --md-sys-color-surface-container-high: #e3e8f2;
-        --md-sys-color-on-surface: #1a1c1e;
-        --md-sys-color-outline: #70787f;
-        --md-sys-color-error: #ba1a1a;
-        --shadow-elev-1: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.12);
+        color-scheme: dark;
+        --md-sys-color-primary: #a5c8ff;
+        --md-sys-color-on-primary: #003061;
+        --md-sys-color-primary-container: #1b4678;
+        --md-sys-color-on-primary-container: #d6e4ff;
+        --md-sys-color-secondary-container: #394456;
+        --md-sys-color-on-secondary-container: #d7e3f7;
+        --md-sys-color-surface: #111318;
+        --md-sys-color-surface-container: #1d2027;
+        --md-sys-color-surface-container-high: #272b33;
+        --md-sys-color-on-surface: #e2e2e9;
+        --md-sys-color-outline: #8a929b;
+        --md-sys-color-error: #ffb4ab;
+        --md-sys-color-error-container: #93000a;
+        --shadow-elev-1: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
       }
 
       * {
@@ -35,7 +36,7 @@
       body {
         margin: 0;
         font-family: "Roboto", system-ui, sans-serif;
-        background: linear-gradient(145deg, #f7f7ff 0%, #eef2ff 100%);
+        background: linear-gradient(145deg, #0f1116 0%, #171a22 100%);
         color: var(--md-sys-color-on-surface);
         min-height: 100vh;
       }
@@ -61,14 +62,14 @@
 
       .subtitle {
         margin: 6px 0 0;
-        color: #4b5563;
+        color: #aab3bf;
       }
 
       .surface {
         background: var(--md-sys-color-surface);
         border-radius: 24px;
         box-shadow: var(--shadow-elev-1);
-        border: 1px solid #dce0e6;
+        border: 1px solid #2b3039;
       }
 
       .card {
@@ -94,17 +95,18 @@
 
       label {
         font-size: 0.92rem;
-        color: #475569;
+        color: #b4becb;
       }
 
       input,
       textarea {
         width: 100%;
-        border: 1px solid #c1c7d0;
+        border: 1px solid #444b58;
         border-radius: 14px;
         padding: 12px 14px;
         font: inherit;
-        background: #fff;
+        color: var(--md-sys-color-on-surface);
+        background: #161a22;
       }
 
       textarea {
@@ -143,13 +145,13 @@
       .btn.outline {
         background: transparent;
         color: var(--md-sys-color-primary);
-        border: 1px solid #8fb5e2;
+        border: 1px solid #5b708e;
       }
 
       .status {
         margin-top: 10px;
         min-height: 20px;
-        color: #334155;
+        color: #b6c0ce;
       }
 
       .status.error {
@@ -170,7 +172,7 @@
 
       .note-card {
         background: var(--md-sys-color-surface-container);
-        border: 1px solid #d7dbe3;
+        border: 1px solid #343a44;
         border-radius: 18px;
         padding: 14px;
       }
@@ -189,8 +191,12 @@
       }
 
       .muted {
-        color: #64748b;
+        color: #96a3b5;
         font-size: 0.93rem;
+      }
+
+      .button-row.tight {
+        margin-top: 12px;
       }
     </style>
   </head>
@@ -277,6 +283,7 @@
         orderBy,
         query,
         serverTimestamp,
+        updateDoc,
       } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
       const firebaseConfig = {
@@ -323,11 +330,29 @@
           const note = noteDoc.data();
           const card = document.createElement("article");
           card.className = "note-card";
-          card.innerHTML = `
-            <h3>${note.title}</h3>
-            <p>${note.content}</p>
-            <button class="btn outline" data-id="${noteDoc.id}">Delete</button>
-          `;
+
+          const title = document.createElement("h3");
+          title.textContent = note.title;
+          const content = document.createElement("p");
+          content.textContent = note.content;
+
+          const actions = document.createElement("div");
+          actions.className = "button-row tight";
+
+          const editButton = document.createElement("button");
+          editButton.className = "btn tonal";
+          editButton.dataset.id = noteDoc.id;
+          editButton.dataset.action = "edit";
+          editButton.textContent = "Edit";
+
+          const deleteButton = document.createElement("button");
+          deleteButton.className = "btn outline";
+          deleteButton.dataset.id = noteDoc.id;
+          deleteButton.dataset.action = "delete";
+          deleteButton.textContent = "Delete";
+
+          actions.append(editButton, deleteButton);
+          card.append(title, content, actions);
           notesList.appendChild(card);
         });
       }
@@ -424,8 +449,40 @@
         }
 
         try {
-          await deleteDoc(doc(db, "users", auth.currentUser.uid, "notes", button.dataset.id));
-          setStatus(notesStatus, "Note deleted.");
+          const noteRef = doc(db, "users", auth.currentUser.uid, "notes", button.dataset.id);
+
+          if (button.dataset.action === "delete") {
+            await deleteDoc(noteRef);
+            setStatus(notesStatus, "Note deleted.");
+            return;
+          }
+
+          if (button.dataset.action === "edit") {
+            const currentCard = button.closest(".note-card");
+            const currentTitle = currentCard?.querySelector("h3")?.textContent ?? "";
+            const currentContent = currentCard?.querySelector("p")?.textContent ?? "";
+            const nextTitle = window.prompt("Edit title", currentTitle);
+            if (nextTitle === null) {
+              return;
+            }
+            const nextContent = window.prompt("Edit content", currentContent);
+            if (nextContent === null) {
+              return;
+            }
+
+            const trimmedTitle = nextTitle.trim();
+            const trimmedContent = nextContent.trim();
+            if (!trimmedTitle || !trimmedContent) {
+              setStatus(notesStatus, "Title and content are required.", true);
+              return;
+            }
+
+            await updateDoc(noteRef, {
+              title: trimmedTitle,
+              content: trimmedContent,
+            });
+            setStatus(notesStatus, "Note updated.");
+          }
         } catch (error) {
           setStatus(notesStatus, error.message, true);
         }
