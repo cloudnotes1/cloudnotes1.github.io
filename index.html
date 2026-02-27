@@ -420,7 +420,7 @@
         let unsubscribeNotes = null;
         let allNotes = [];
         let currentEditingNoteId = null; 
-        let currentOwnerId = null; // Important for collaboration!
+        let currentOwnerId = null; 
         let currentAttachments = [];
         let currentNoteIsPublic = false;
         let currentCollaborators = [];
@@ -532,7 +532,7 @@
         function handleRouting() {
             const hash = window.location.hash;
             
-            // Allow checking shared notes (might be public or collaborative)
+            // Allow checking shared notes
             if (hash.startsWith('#shared/')) {
                 authScreen.classList.add('hidden');
                 appScreen.classList.add('hidden');
@@ -608,7 +608,7 @@
             handleRouting(); 
         });
 
-        // Firestore List (User's own notes)
+        // Firestore List
         function startNotesListener() {
             if (!currentUser) return;
             loadingIndicator.classList.remove('hidden'); emptyState.classList.add('hidden');
@@ -711,7 +711,6 @@
                     if (docSnap.exists()) {
                         const data = {id: docSnap.id, ...docSnap.data()};
                         
-                        // Determine Access Level
                         const isOwner = currentUser && currentUser.uid === currentOwnerId;
                         const isCollab = currentUser && data.collaborators && data.collaborators.includes(currentUser.email);
                         const isPublic = data.isPublic === true;
@@ -723,20 +722,17 @@
                         } else if (isCollab) {
                             isReadOnlyMode = false;
                             collabBanner.classList.remove('hidden');
-                            // Collaborators shouldn't delete the whole note or manage sharing settings
                             editorDeleteBtn.classList.add('hidden');
                             editorShareBtn.classList.add('hidden'); 
                         } else if (isPublic) {
                             isReadOnlyMode = true;
                             readOnlyBanner.classList.remove('hidden');
                         } else {
-                            // No access
                             showSnackbar("You do not have access to this note.");
                             window.location.hash = '#home';
                             return;
                         }
 
-                        // Apply UI locks based on access level
                         if (isReadOnlyMode) {
                             editorSaveBtn.classList.add('hidden');
                             attachFileBtn.classList.add('hidden');
@@ -776,7 +772,7 @@
             if (isReadOnlyMode || !currentUser) return;
             const title = editorTitleInput.value.trim(); const content = editorContentInput.value.trim();
             if (!title && !content && currentAttachments.length === 0) {
-                if(manualTrigger) window.location.hash = '#home';
+                if(manualTrigger) showSnackbar("Cannot save an empty note");
                 return;
             }
 
@@ -786,7 +782,6 @@
             }
 
             try {
-                // Save to owner's collection (which could be the current user OR another user if collaborating)
                 const noteRef = currentEditingNoteId 
                     ? doc(db, 'users', currentOwnerId, 'notes', currentEditingNoteId) 
                     : doc(collection(db, 'users', currentUser.uid, 'notes'));
@@ -808,7 +803,7 @@
                     updatedAt: serverTimestamp() 
                 }, { merge: true });
                 
-                if (manualTrigger) { showSnackbar("Note saved"); window.location.hash = '#home'; }
+                if (manualTrigger) { showSnackbar("Note saved successfully"); }
             } catch (error) {
                 console.error("Save error:", error);
                 if(manualTrigger) showSnackbar("Error saving note");
@@ -929,7 +924,6 @@
 
             for (const file of files) {
                 const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-                // Upload to the owner's bucket folder, even if uploaded by a collaborator
                 const filePath = `users/${currentOwnerId}/notes/${currentEditingNoteId}/${Date.now()}_${safeName}`;
                 try {
                     const snapshot = await uploadBytesResumable(ref(storage, filePath), file);
