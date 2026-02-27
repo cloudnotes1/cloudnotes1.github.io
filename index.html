@@ -222,13 +222,14 @@
 
     <!-- Share Dialog -->
     <div id="share-dialog" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 dialog-overlay opacity-0 transition-opacity duration-200">
-        <div class="dialog-content w-full max-w-sm flex flex-col transform scale-95 transition-transform duration-200" id="share-dialog-card">
-            <div class="p-6 pb-4">
+        <div class="dialog-content w-full max-w-md flex flex-col transform scale-95 transition-transform duration-200" id="share-dialog-card">
+            <div class="p-6 pb-4 max-h-[80vh] overflow-y-auto">
                 <div class="flex items-center gap-3 mb-4">
                     <span class="material-symbols-outlined text-[#0b57d0] text-3xl">public</span>
                     <h3 class="text-2xl font-normal google-sans text-[#1f1f1f]">Share Note</h3>
                 </div>
                 
+                <!-- Public Link Section -->
                 <div class="flex items-center justify-between mb-4 mt-6">
                     <div>
                         <div class="font-medium text-[#1f1f1f]">Public Link</div>
@@ -243,8 +244,22 @@
                         <button id="copy-link-btn" class="px-4 py-1.5 rounded-md m3-primary text-sm font-medium transition-colors google-sans whitespace-nowrap">Copy</button>
                     </div>
                 </div>
+
+                <!-- Collaborators Section -->
+                <div class="mt-6 pt-6 border-t border-[#e0e2e0]">
+                    <div class="font-medium text-[#1f1f1f] mb-1">Collaborators</div>
+                    <div class="text-sm text-[#444746] mb-3">Add people to let them edit this note</div>
+                    <div class="flex gap-2 mb-4">
+                        <input type="email" id="collab-email-input" class="flex-grow bg-[#eef1f6] border border-[#c7c6ca] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0b57d0] transition-colors" placeholder="Email address">
+                        <button id="add-collab-btn" class="px-4 py-2 rounded-md m3-primary text-sm font-medium transition-colors">Add</button>
+                    </div>
+                    <div id="collaborators-list" class="space-y-2">
+                        <!-- Collaborators injected here -->
+                    </div>
+                </div>
+
             </div>
-            <div class="p-4 flex items-center justify-end gap-2 border-t border-[#e0e2e0]">
+            <div class="p-4 flex items-center justify-end gap-2 border-t border-[#e0e2e0] bg-[#fdfbff] rounded-b-[28px]">
                 <button id="share-close-btn" class="px-5 py-2 rounded-full text-[#0b57d0] font-medium hover:bg-[#d3e3fd] transition-colors google-sans">Done</button>
             </div>
         </div>
@@ -361,10 +376,14 @@
         </header>
 
         <main class="flex-grow p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full flex flex-col">
-            <!-- Read Only Banner -->
-            <div id="read-only-banner" class="hidden bg-[#d3e3fd] text-[#041e49] px-4 py-2 rounded-lg mb-4 text-sm font-medium flex items-center gap-2">
+            <!-- Information Banners -->
+            <div id="read-only-banner" class="hidden bg-[#eef1f6] text-[#444746] px-4 py-2 rounded-lg mb-4 text-sm flex items-center gap-2 border border-[#c7c6ca]">
                 <span class="material-symbols-outlined text-[18px]">visibility</span>
                 You are viewing a shared note in read-only mode.
+            </div>
+            <div id="collab-banner" class="hidden bg-[#d3e3fd] text-[#041e49] px-4 py-2 rounded-lg mb-4 text-sm font-medium flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px]">group</span>
+                You are editing this note as a collaborator.
             </div>
 
             <textarea id="editor-content" placeholder="Start typing your note here..." class="flex-grow w-full min-h-[300px] resize-none bg-transparent border-none outline-none text-[#1f1f1f] placeholder-[#747775] text-base leading-relaxed"></textarea>
@@ -401,8 +420,10 @@
         let unsubscribeNotes = null;
         let allNotes = [];
         let currentEditingNoteId = null; 
+        let currentOwnerId = null; // Important for collaboration!
         let currentAttachments = [];
         let currentNoteIsPublic = false;
+        let currentCollaborators = [];
         let isReadOnlyMode = false;
 
         // DOM Elements
@@ -440,6 +461,9 @@
         const shareLinkInput = document.getElementById('share-link-input');
         const copyLinkBtn = document.getElementById('copy-link-btn');
         const shareCloseBtn = document.getElementById('share-close-btn');
+        const collabEmailInput = document.getElementById('collab-email-input');
+        const addCollabBtn = document.getElementById('add-collab-btn');
+        const collaboratorsList = document.getElementById('collaborators-list');
 
         const backBtn = document.getElementById('back-btn');
         const editorTitleInput = document.getElementById('editor-title');
@@ -451,7 +475,10 @@
         const attachmentInput = document.getElementById('attachment-input');
         const attachmentsContainer = document.getElementById('attachments-container');
         const attachmentsList = document.getElementById('attachments-list');
+        
         const readOnlyBanner = document.getElementById('read-only-banner');
+        const collabBanner = document.getElementById('collab-banner');
+        
         const snackbar = document.getElementById('snackbar');
         const snackbarText = document.getElementById('snackbar-text');
         const snackbarIcon = document.getElementById('snackbar-icon');
@@ -505,7 +532,7 @@
         function handleRouting() {
             const hash = window.location.hash;
             
-            // Allow public shared notes without forcing auth
+            // Allow checking shared notes (might be public or collaborative)
             if (hash.startsWith('#shared/')) {
                 authScreen.classList.add('hidden');
                 appScreen.classList.add('hidden');
@@ -531,7 +558,9 @@
                 editorScreen.classList.add('hidden');
                 appScreen.classList.remove('hidden');
                 currentEditingNoteId = null;
+                currentOwnerId = null;
                 currentAttachments = [];
+                currentCollaborators = [];
                 isReadOnlyMode = false;
             }
         }
@@ -579,7 +608,7 @@
             handleRouting(); 
         });
 
-        // Firestore List
+        // Firestore List (User's own notes)
         function startNotesListener() {
             if (!currentUser) return;
             loadingIndicator.classList.remove('hidden'); emptyState.classList.add('hidden');
@@ -611,13 +640,18 @@
                 const date = note.updatedAt ? new Date(note.updatedAt.toMillis()).toLocaleDateString() : 'Draft';
                 const hasAttachments = note.attachments && note.attachments.length > 0;
                 const isPublic = note.isPublic === true;
+                const isSharedCollab = note.collaborators && note.collaborators.length > 0;
+
+                let iconHtml = '';
+                if (isPublic) iconHtml += `<span class="material-symbols-outlined text-[18px]" title="Publicly shared">public</span>`;
+                else if (isSharedCollab) iconHtml += `<span class="material-symbols-outlined text-[18px]" title="Shared with collaborators">group</span>`;
+                if (hasAttachments) iconHtml += `<span class="material-symbols-outlined text-[18px]" title="${note.attachments.length} attachment(s)">attach_file</span>`;
 
                 card.innerHTML = `
                     <div class="flex-grow overflow-hidden relative">
                         <h3 class="text-lg font-medium text-[#1f1f1f] mb-2 truncate google-sans pr-10">${escapeHtml(title)}</h3>
                         <div class="absolute top-0 right-0 flex gap-1 text-[#747775]">
-                            ${isPublic ? `<span class="material-symbols-outlined text-[18px]" title="Publicly shared">public</span>` : ''}
-                            ${hasAttachments ? `<span class="material-symbols-outlined text-[18px]" title="${note.attachments.length} attachment(s)">attach_file</span>` : ''}
+                            ${iconHtml}
                         </div>
                         <p class="text-[#444746] text-sm whitespace-pre-wrap line-clamp-5">${escapeHtml(content)}</p>
                     </div>
@@ -645,60 +679,84 @@
             appScreen.classList.add('hidden');
             editorScreen.classList.remove('hidden');
             
-            const actualOwnerId = ownerId || (currentUser ? currentUser.uid : null);
-            isReadOnlyMode = ownerId && (!currentUser || currentUser.uid !== ownerId);
-
-            if (isReadOnlyMode) {
-                editorSaveBtn.classList.add('hidden');
-                editorDeleteBtn.classList.add('hidden');
-                attachFileBtn.classList.add('hidden');
-                editorShareBtn.classList.add('hidden');
-                readOnlyBanner.classList.remove('hidden');
-                editorTitleInput.readOnly = true;
-                editorContentInput.readOnly = true;
-            } else {
-                editorSaveBtn.classList.remove('hidden');
-                attachFileBtn.classList.remove('hidden');
-                editorShareBtn.classList.remove('hidden');
-                readOnlyBanner.classList.add('hidden');
-                editorTitleInput.readOnly = false;
-                editorContentInput.readOnly = false;
-            }
+            currentOwnerId = ownerId || (currentUser ? currentUser.uid : null);
+            
+            readOnlyBanner.classList.add('hidden');
+            collabBanner.classList.add('hidden');
             
             if (noteId === 'new') {
                 currentEditingNoteId = null;
                 editorTitleInput.value = ''; editorContentInput.value = '';
-                currentAttachments = []; currentNoteIsPublic = false;
+                currentAttachments = []; 
+                currentNoteIsPublic = false;
+                currentCollaborators = [];
+                isReadOnlyMode = false;
                 renderAttachments();
+                
                 editorDeleteBtn.classList.add('hidden');
-                editorShareBtn.classList.add('hidden'); // Cannot share until saved
+                editorShareBtn.classList.add('hidden'); 
+                editorSaveBtn.classList.remove('hidden');
+                attachFileBtn.classList.remove('hidden');
+                editorTitleInput.readOnly = false;
+                editorContentInput.readOnly = false;
                 editorTitleInput.focus();
             } else {
                 currentEditingNoteId = noteId;
-                if (!isReadOnlyMode) editorDeleteBtn.classList.remove('hidden');
+                editorTitleInput.value = 'Loading...'; editorContentInput.value = 'Loading...';
                 
-                const existingNote = allNotes.find(n => n.id === noteId);
-                if (existingNote && !isReadOnlyMode) {
-                    populateEditor(existingNote);
-                } else {
-                    editorTitleInput.value = 'Loading...'; editorContentInput.value = 'Loading...';
-                    try {
-                        const docRef = doc(db, 'users', actualOwnerId, 'notes', noteId);
-                        const docSnap = await getDoc(docRef);
-                        if (docSnap.exists()) {
-                            const data = docSnap.data();
-                            if (isReadOnlyMode && !data.isPublic) {
-                                showSnackbar("This note is private.");
-                                window.location.hash = '#home';
-                                return;
-                            }
-                            populateEditor({id: docSnap.id, ...data});
+                try {
+                    const docRef = doc(db, 'users', currentOwnerId, 'notes', noteId);
+                    const docSnap = await getDoc(docRef);
+                    
+                    if (docSnap.exists()) {
+                        const data = {id: docSnap.id, ...docSnap.data()};
+                        
+                        // Determine Access Level
+                        const isOwner = currentUser && currentUser.uid === currentOwnerId;
+                        const isCollab = currentUser && data.collaborators && data.collaborators.includes(currentUser.email);
+                        const isPublic = data.isPublic === true;
+
+                        if (isOwner) {
+                            isReadOnlyMode = false;
+                            editorDeleteBtn.classList.remove('hidden');
+                            editorShareBtn.classList.remove('hidden');
+                        } else if (isCollab) {
+                            isReadOnlyMode = false;
+                            collabBanner.classList.remove('hidden');
+                            // Collaborators shouldn't delete the whole note or manage sharing settings
+                            editorDeleteBtn.classList.add('hidden');
+                            editorShareBtn.classList.add('hidden'); 
+                        } else if (isPublic) {
+                            isReadOnlyMode = true;
+                            readOnlyBanner.classList.remove('hidden');
                         } else {
-                            showSnackbar("Note not found"); window.location.hash = '#home';
+                            // No access
+                            showSnackbar("You do not have access to this note.");
+                            window.location.hash = '#home';
+                            return;
                         }
-                    } catch (error) {
-                        showSnackbar("Error loading note"); window.location.hash = '#home';
+
+                        // Apply UI locks based on access level
+                        if (isReadOnlyMode) {
+                            editorSaveBtn.classList.add('hidden');
+                            attachFileBtn.classList.add('hidden');
+                            editorTitleInput.readOnly = true;
+                            editorContentInput.readOnly = true;
+                        } else {
+                            editorSaveBtn.classList.remove('hidden');
+                            attachFileBtn.classList.remove('hidden');
+                            editorTitleInput.readOnly = false;
+                            editorContentInput.readOnly = false;
+                        }
+
+                        populateEditor(data);
+                    } else {
+                        showSnackbar("Note not found"); window.location.hash = '#home';
                     }
+                } catch (error) {
+                    console.error(error);
+                    showSnackbar("Error loading note. Access denied or network issue."); 
+                    window.location.hash = '#home';
                 }
             }
         }
@@ -708,7 +766,7 @@
             editorContentInput.value = noteData.content || '';
             currentAttachments = noteData.attachments || [];
             currentNoteIsPublic = noteData.isPublic || false;
-            if(!isReadOnlyMode) editorShareBtn.classList.remove('hidden');
+            currentCollaborators = noteData.collaborators || [];
             renderAttachments();
         }
 
@@ -728,31 +786,47 @@
             }
 
             try {
-                let noteRef = currentEditingNoteId ? doc(db, 'users', currentUser.uid, 'notes', currentEditingNoteId) : doc(collection(db, 'users', currentUser.uid, 'notes'));
+                // Save to owner's collection (which could be the current user OR another user if collaborating)
+                const noteRef = currentEditingNoteId 
+                    ? doc(db, 'users', currentOwnerId, 'notes', currentEditingNoteId) 
+                    : doc(collection(db, 'users', currentUser.uid, 'notes'));
+                
                 if (!currentEditingNoteId) {
                     currentEditingNoteId = noteRef.id;
+                    currentOwnerId = currentUser.uid;
                     window.history.replaceState(null, '', `#note/${currentEditingNoteId}`);
                     editorDeleteBtn.classList.remove('hidden');
                     editorShareBtn.classList.remove('hidden');
                 }
 
-                await setDoc(noteRef, { title, content, attachments: currentAttachments, isPublic: currentNoteIsPublic, updatedAt: serverTimestamp() }, { merge: true });
+                await setDoc(noteRef, { 
+                    title, 
+                    content, 
+                    attachments: currentAttachments, 
+                    isPublic: currentNoteIsPublic, 
+                    collaborators: currentCollaborators,
+                    updatedAt: serverTimestamp() 
+                }, { merge: true });
+                
                 if (manualTrigger) { showSnackbar("Note saved"); window.location.hash = '#home'; }
             } catch (error) {
+                console.error("Save error:", error);
                 if(manualTrigger) showSnackbar("Error saving note");
             } finally {
                 if (manualTrigger) { editorSaveBtn.disabled = false; editorSaveBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">save</span><span class="hidden sm:inline">Save</span>'; }
             }
         }
 
-        // Sharing
+        // Sharing & Collaboration
         editorShareBtn.addEventListener('click', async () => {
             if (!currentEditingNoteId) await performSave(false);
             
             shareToggle.checked = currentNoteIsPublic;
             shareLinkContainer.classList.toggle('hidden', !currentNoteIsPublic);
-            shareLinkInput.value = `${window.location.origin}${window.location.pathname}#shared/${currentUser.uid}/${currentEditingNoteId}`;
+            shareLinkInput.value = `${window.location.origin}${window.location.pathname}#shared/${currentOwnerId}/${currentEditingNoteId}`;
             
+            renderCollaboratorsUI();
+
             shareDialog.classList.remove('hidden');
             void shareDialog.offsetWidth;
             shareDialog.classList.remove('opacity-0');
@@ -763,7 +837,7 @@
             currentNoteIsPublic = e.target.checked;
             shareLinkContainer.classList.toggle('hidden', !currentNoteIsPublic);
             if (currentUser && currentEditingNoteId) {
-                await updateDoc(doc(db, 'users', currentUser.uid, 'notes', currentEditingNoteId), { isPublic: currentNoteIsPublic });
+                await updateDoc(doc(db, 'users', currentOwnerId, 'notes', currentEditingNoteId), { isPublic: currentNoteIsPublic });
                 showSnackbar(currentNoteIsPublic ? "Note is now public" : "Note is now private");
             }
         });
@@ -777,6 +851,67 @@
                 document.execCommand("copy");
                 showSnackbar("Link copied!");
             }
+        });
+
+        // Collaborators Logic
+        function renderCollaboratorsUI() {
+            collaboratorsList.innerHTML = '';
+            
+            if (currentCollaborators.length === 0) {
+                collaboratorsList.innerHTML = `<div class="text-sm text-[#747775] italic">No collaborators added yet.</div>`;
+                return;
+            }
+
+            currentCollaborators.forEach((email, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between bg-[#f3f6fc] px-3 py-2 rounded-lg text-sm text-[#1f1f1f] border border-[#e0e2e0]';
+                div.innerHTML = `
+                    <span class="truncate">${escapeHtml(email)}</span>
+                    <button class="remove-collab-btn w-6 h-6 rounded-full flex items-center justify-center hover:bg-[#ffdad6] text-[#ba1a1a] transition-colors" data-index="${index}" title="Remove collaborator">
+                        <span class="material-symbols-outlined text-[16px] pointer-events-none">close</span>
+                    </button>
+                `;
+                collaboratorsList.appendChild(div);
+            });
+
+            document.querySelectorAll('.remove-collab-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const idx = e.target.getAttribute('data-index');
+                    const removedEmail = currentCollaborators[idx];
+                    currentCollaborators.splice(idx, 1);
+                    renderCollaboratorsUI();
+                    await performSave(false);
+                    showSnackbar(`Removed ${removedEmail}`);
+                });
+            });
+        }
+
+        addCollabBtn.addEventListener('click', async () => {
+            const email = collabEmailInput.value.trim().toLowerCase();
+            
+            if (!email) return;
+            
+            // Basic email validation
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showSnackbar("Please enter a valid email.");
+                return;
+            }
+            if (email === currentUser.email) {
+                showSnackbar("You are already the owner.");
+                collabEmailInput.value = '';
+                return;
+            }
+            if (currentCollaborators.includes(email)) {
+                showSnackbar("User is already a collaborator.");
+                collabEmailInput.value = '';
+                return;
+            }
+
+            currentCollaborators.push(email);
+            collabEmailInput.value = '';
+            renderCollaboratorsUI();
+            await performSave(false);
+            showSnackbar(`Invited ${email}`);
         });
 
         shareCloseBtn.addEventListener('click', () => closeDialog(shareDialog, shareDialogCard));
@@ -794,12 +929,16 @@
 
             for (const file of files) {
                 const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-                const filePath = `users/${currentUser.uid}/notes/${currentEditingNoteId}/${Date.now()}_${safeName}`;
+                // Upload to the owner's bucket folder, even if uploaded by a collaborator
+                const filePath = `users/${currentOwnerId}/notes/${currentEditingNoteId}/${Date.now()}_${safeName}`;
                 try {
                     const snapshot = await uploadBytesResumable(ref(storage, filePath), file);
                     currentAttachments.push({ name: file.name, url: await getDownloadURL(snapshot.ref), path: filePath, type: file.type, size: file.size });
                     renderAttachments();
-                } catch (error) { showSnackbar(`Failed to upload ${file.name}`); }
+                } catch (error) { 
+                    console.error(error);
+                    showSnackbar(`Failed to upload ${file.name}`); 
+                }
             }
             hideSnackbar(); await performSave(false);
         }
@@ -839,9 +978,9 @@
             });
         }
 
-        // Deletion
+        // Deletion (Owner only)
         editorDeleteBtn.addEventListener('click', () => {
-            if (currentEditingNoteId && !isReadOnlyMode) {
+            if (currentEditingNoteId && !isReadOnlyMode && currentUser.uid === currentOwnerId) {
                 showConfirm("Delete Note", "Are you sure you want to delete this note? This will also delete any attached files.", async () => {
                     await deleteNote(currentEditingNoteId, currentAttachments); window.location.hash = '#home';
                 });
@@ -849,7 +988,7 @@
         });
 
         async function deleteNote(noteId, attachmentsArray) {
-            if (!currentUser) return;
+            if (!currentUser || currentUser.uid !== currentOwnerId) return;
             try {
                 if (attachmentsArray && attachmentsArray.length > 0) {
                     for (const att of attachmentsArray) {
