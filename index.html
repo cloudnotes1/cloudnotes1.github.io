@@ -285,6 +285,43 @@
         </div>
     </div>
 
+    <!-- Details Dialog -->
+    <div id="details-dialog" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 dialog-overlay opacity-0 transition-opacity duration-200">
+        <div class="dialog-content w-full max-w-sm flex flex-col transform scale-95 transition-transform duration-200" id="details-dialog-card">
+            <div class="p-6 pb-4">
+                <div class="flex items-center gap-3 mb-6">
+                    <span class="material-symbols-outlined text-[#0b57d0] text-3xl">info</span>
+                    <h3 class="text-2xl font-normal google-sans text-[#1f1f1f]">Note Details</h3>
+                </div>
+                <div class="space-y-4 text-[15px] text-[#444746]">
+                    <div class="flex justify-between border-b border-[#e0e2e0] pb-2">
+                        <span class="font-medium text-[#1f1f1f]">Words</span>
+                        <span id="detail-words">0</span>
+                    </div>
+                    <div class="flex justify-between border-b border-[#e0e2e0] pb-2">
+                        <span class="font-medium text-[#1f1f1f]">Characters</span>
+                        <span id="detail-chars">0</span>
+                    </div>
+                    <div class="flex justify-between border-b border-[#e0e2e0] pb-2">
+                        <span class="font-medium text-[#1f1f1f]">Created</span>
+                        <span id="detail-created" class="text-right max-w-[60%]">-</span>
+                    </div>
+                    <div class="flex justify-between border-b border-[#e0e2e0] pb-2">
+                        <span class="font-medium text-[#1f1f1f]">Modified</span>
+                        <span id="detail-modified" class="text-right max-w-[60%]">-</span>
+                    </div>
+                    <div class="flex justify-between pb-2">
+                        <span class="font-medium text-[#1f1f1f]">Access</span>
+                        <span id="detail-access" class="bg-[#eef1f6] px-2 py-0.5 rounded text-sm text-[#041e49]">Private</span>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 flex items-center justify-end border-t border-[#e0e2e0] bg-[#fdfbff] rounded-b-[28px]">
+                <button id="details-close-btn" class="ripple-surface px-5 py-2 rounded-full text-[#0b57d0] font-medium hover:bg-[#d3e3fd] transition-colors google-sans">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- AUTHENTICATION SCREEN -->
     <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
         <div class="bg-white rounded-[28px] p-8 w-full max-w-md shadow-sm border border-[#e0e2e0]">
@@ -378,6 +415,9 @@
                 <input type="text" id="editor-title" placeholder="Title" class="editor-title w-full max-w-2xl text-2xl font-medium bg-transparent border-none outline-none text-[#1f1f1f] placeholder-[#747775] ml-2 px-2 py-1">
             </div>
             <div class="flex items-center gap-2 pl-4">
+                <button id="editor-info-btn" class="ripple-surface w-10 h-10 rounded-full hover:bg-[#e1e2e8] text-[#444746] flex items-center justify-center transition-colors" title="Note Details">
+                    <span class="material-symbols-outlined pointer-events-none">info</span>
+                </button>
                 <button id="editor-share-btn" class="ripple-surface w-10 h-10 rounded-full hover:bg-[#e1e2e8] text-[#444746] flex items-center justify-center transition-colors hidden" title="Share Note">
                     <span class="material-symbols-outlined pointer-events-none">share</span>
                 </button>
@@ -445,6 +485,9 @@
         let currentNoteIsPublic = false;
         let currentCollaborators = [];
         let isReadOnlyMode = false;
+        
+        let currentNoteCreatedAt = null;
+        let currentNoteUpdatedAt = null;
 
         // DOM Elements
         const authScreen = document.getElementById('auth-screen');
@@ -485,9 +528,20 @@
         const addCollabBtn = document.getElementById('add-collab-btn');
         const collaboratorsList = document.getElementById('collaborators-list');
 
+        const detailsDialog = document.getElementById('details-dialog');
+        const detailsDialogCard = document.getElementById('details-dialog-card');
+        const detailsCloseBtn = document.getElementById('details-close-btn');
+        
+        const detailWords = document.getElementById('detail-words');
+        const detailChars = document.getElementById('detail-chars');
+        const detailCreated = document.getElementById('detail-created');
+        const detailModified = document.getElementById('detail-modified');
+        const detailAccess = document.getElementById('detail-access');
+
         const backBtn = document.getElementById('back-btn');
         const editorTitleInput = document.getElementById('editor-title');
         const editorContentInput = document.getElementById('editor-content');
+        const editorInfoBtn = document.getElementById('editor-info-btn');
         const editorSaveBtn = document.getElementById('editor-save-btn');
         const editorDeleteBtn = document.getElementById('editor-delete-btn');
         const editorShareBtn = document.getElementById('editor-share-btn');
@@ -573,6 +627,12 @@
             return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
         }
 
+        function formatTime(timestamp) {
+            if (!timestamp) return 'Not saved yet';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleString();
+        }
+
         function showConfirm(title, message, onConfirm) {
             confirmTitle.textContent = title;
             confirmMessage.textContent = message;
@@ -624,6 +684,8 @@
                 currentAttachments = [];
                 currentCollaborators = [];
                 isReadOnlyMode = false;
+                currentNoteCreatedAt = null;
+                currentNoteUpdatedAt = null;
             }
         }
         window.addEventListener('hashchange', handleRouting);
@@ -753,6 +815,8 @@
                 currentNoteIsPublic = false;
                 currentCollaborators = [];
                 isReadOnlyMode = false;
+                currentNoteCreatedAt = null;
+                currentNoteUpdatedAt = null;
                 renderAttachments();
                 
                 editorDeleteBtn.classList.add('hidden');
@@ -825,6 +889,8 @@
             currentAttachments = noteData.attachments || [];
             currentNoteIsPublic = noteData.isPublic || false;
             currentCollaborators = noteData.collaborators || [];
+            currentNoteCreatedAt = noteData.createdAt || null;
+            currentNoteUpdatedAt = noteData.updatedAt || null;
             renderAttachments();
         }
 
@@ -844,11 +910,12 @@
             }
 
             try {
-                const noteRef = currentEditingNoteId 
-                    ? doc(db, 'users', currentOwnerId, 'notes', currentEditingNoteId) 
-                    : doc(collection(db, 'users', currentUser.uid, 'notes'));
+                const isNewNote = !currentEditingNoteId;
+                const noteRef = isNewNote 
+                    ? doc(collection(db, 'users', currentUser.uid, 'notes'))
+                    : doc(db, 'users', currentOwnerId, 'notes', currentEditingNoteId);
                 
-                if (!currentEditingNoteId) {
+                if (isNewNote) {
                     currentEditingNoteId = noteRef.id;
                     currentOwnerId = currentUser.uid;
                     window.history.replaceState(null, '', `#note/${currentEditingNoteId}`);
@@ -856,14 +923,20 @@
                     editorShareBtn.classList.remove('hidden');
                 }
 
-                await setDoc(noteRef, { 
+                const dataToSave = { 
                     title, 
                     content, 
                     attachments: currentAttachments, 
                     isPublic: currentNoteIsPublic, 
                     collaborators: currentCollaborators,
                     updatedAt: serverTimestamp() 
-                }, { merge: true });
+                };
+
+                if (isNewNote) {
+                    dataToSave.createdAt = serverTimestamp();
+                }
+
+                await setDoc(noteRef, dataToSave, { merge: true });
                 
                 if (manualTrigger) { showSnackbar("Note saved successfully"); }
             } catch (error) {
@@ -873,6 +946,39 @@
                 if (manualTrigger) { editorSaveBtn.disabled = false; editorSaveBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] pointer-events-none">save</span><span class="hidden sm:inline pointer-events-none">Save</span>'; }
             }
         }
+
+        // Details Dialog Logic
+        editorInfoBtn.addEventListener('click', () => {
+            const content = editorContentInput.value;
+            const words = content.trim() === '' ? 0 : content.trim().split(/\s+/).length;
+            const chars = content.length;
+
+            detailWords.textContent = words.toLocaleString();
+            detailChars.textContent = chars.toLocaleString();
+
+            detailCreated.textContent = formatTime(currentNoteCreatedAt);
+            detailModified.textContent = formatTime(currentNoteUpdatedAt);
+
+            let access = 'Private';
+            detailAccess.className = 'bg-[#eef1f6] px-2 py-0.5 rounded text-sm text-[#041e49]'; // default Private styling
+            
+            if (currentNoteIsPublic) {
+                access = 'Public Link';
+                detailAccess.className = 'bg-[#d3e3fd] px-2 py-0.5 rounded text-sm text-[#041e49] font-medium'; // highlight Public
+            } else if (currentCollaborators && currentCollaborators.length > 0) {
+                access = 'Shared';
+                detailAccess.className = 'bg-[#c2e7ff] px-2 py-0.5 rounded text-sm text-[#001d35] font-medium'; // highlight Shared
+            }
+            
+            detailAccess.textContent = access;
+
+            detailsDialog.classList.remove('hidden');
+            void detailsDialog.offsetWidth;
+            detailsDialog.classList.remove('opacity-0');
+            detailsDialogCard.classList.remove('scale-95');
+        });
+
+        detailsCloseBtn.addEventListener('click', () => closeDialog(detailsDialog, detailsDialogCard));
 
         // Sharing & Collaboration
         editorShareBtn.addEventListener('click', async () => {
@@ -910,7 +1016,6 @@
             }
         });
 
-        // Collaborators Logic
         function renderCollaboratorsUI() {
             collaboratorsList.innerHTML = '';
             
@@ -948,7 +1053,6 @@
             
             if (!email) return;
             
-            // Basic email validation
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
                 showSnackbar("Please enter a valid email.");
                 return;
@@ -1048,10 +1152,8 @@
         async function deleteNote(noteId, attachmentsArray) {
             if (!currentUser) return;
             
-            // Determine the owner. If on the homepage, currentOwnerId is null, meaning the user is viewing their own notes.
             const ownerId = currentOwnerId || currentUser.uid;
             
-            // Only allow deletion if the user actually owns the note
             if (currentUser.uid !== ownerId) return;
 
             try {
