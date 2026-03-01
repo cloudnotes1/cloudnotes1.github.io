@@ -1364,14 +1364,31 @@
             if (currentUser.uid !== ownerId) return;
 
             try {
-                // If we completely delete the note, we can safely attempt to clean up attached storage files.
-                // Note: History subcollection items will remain in Firestore but will be practically orphaned. 
-                // In a production app, a Cloud Function should delete the `history` subcollection recursively.
+                const storagePathsToDelete = new Set();
+
                 if (attachmentsArray && attachmentsArray.length > 0) {
-                    for (const att of attachmentsArray) {
-                        try { await deleteObject(ref(storage, att.path)); } catch (e) {}
+                    attachmentsArray.forEach(att => {
+                        if (att?.path) storagePathsToDelete.add(att.path);
+                    });
+                }
+
+                const historyRef = collection(db, 'users', ownerId, 'notes', noteId, 'history');
+                const historySnap = await getDocs(historyRef);
+                historySnap.forEach((historyDoc) => {
+                    const historyAttachments = historyDoc.data()?.attachments || [];
+                    historyAttachments.forEach((att) => {
+                        if (att?.path) storagePathsToDelete.add(att.path);
+                    });
+                });
+
+                for (const path of storagePathsToDelete) {
+                    try {
+                        await deleteObject(ref(storage, path));
+                    } catch (e) {
+                        // Ignore missing files or permission drift and continue deleting the note.
                     }
                 }
+
                 await deleteDoc(doc(db, 'users', ownerId, 'notes', noteId));
                 showSnackbar("Note deleted");
             } catch (error) { 
